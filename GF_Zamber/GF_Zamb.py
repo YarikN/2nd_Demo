@@ -123,7 +123,7 @@ def main(request):
     db = client.mysinoptik
     # take 3 last inputs in DB on key "city"
     fromdb = list(db.weather.find({"name": city}, {"wind": 1, "main.pressure": 1, 'dt': 1}).sort('dt', pymongo.DESCENDING).limit(3))
-    pressure = frompubsub['pressure']
+
 
     # geting the prelast and preprelast data if the topic2 data == last data in sinoptik
     if frompubsub['dt'] == fromdb[0]['dt']:
@@ -133,25 +133,33 @@ def main(request):
         preplast = fromdb[0]['main']['pressure']
         prepreplast = fromdb[1]['main']['pressure']
 
-    wind = frompubsub['wind']['deg']
-    mongo_dt = frompubsub['dt']
-    dt = datetime.fromtimestamp(frompubsub['dt'])
-    month = dt.month
+    # {"pressure": 1023, "name": "Dnipropetrovsk", "dt": 1369824698, "wind": {"speed": 7.31}}
+    #{"pressure": 1023, "name": "Dnipropetrovsk", "dt": 1369824698, "wind": {"speed": 7.31, "deg": 187.002}}
 
-    pressure = change_press_wind(pressure, wind)
+    try:
+        wind = frompubsub['wind']['deg']
+        pressure = frompubsub['pressure']
 
-    trend = trend_func(pressure, preplast, prepreplast)
+        mongo_dt = frompubsub['dt']
+        dt = datetime.fromtimestamp(frompubsub['dt'])
+        month = dt.month
 
-    pressure = change_press_month(pressure, trend, month)
+        trend = trend_func(pressure, preplast, prepreplast)
+        pressure = change_press_wind(pressure, wind)
+        pressure = change_press_month(pressure, trend, month)
 
-    zamber = zamberetti(pressure)
+        zamber = zamberetti(pressure)
 
-    trendLetter = {'fall': fall_press, 'rise': rise_press, 'stab': stab_press}
+        trendLetter = {'fall': fall_press, 'rise': rise_press, 'stab': stab_press}
 
-    prognosis = result(trendLetter[trend](zamber))
+        forecast = result(trendLetter[trend](zamber))
+        toredis = json.dumps({'forecast': forecast, 'dt': mongo_dt}).encode('UTF-8')
 
-    toredis = json.dumps({'prognosis': prognosis, 'dt': mongo_dt}).encode('UTF-8')
-    r = redis.StrictRedis(host='35.187.98.192', port=6379, db=1)
-    r.set(city, toredis)
+        r = redis.StrictRedis(host='35.187.98.192', port=6379, db=1)
+        r.set(city, toredis)
 
-
+        return prognosis
+    except:
+        toredis = json.dumps({'forecast': "There is a lack of information to make a forecast", 'dt': mongo_dt}).encode('UTF-8')
+        r = redis.StrictRedis(host='35.187.98.192', port=6379, db=1)
+        r.set(city, toredis)
